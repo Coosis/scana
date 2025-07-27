@@ -5,9 +5,9 @@ if not os.path.exists(w2v_save_path):
     os.makedirs(w2v_save_path)
 
 model_default_args = {
-    "embed_size": 50,
-    "window_size": 2,
-    "neg_size": 4
+    "embed_size": 30,
+    "window_size": 20,
+    "neg_size": 5,
 }
 
 def epoch2cp(number):

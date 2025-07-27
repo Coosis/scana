@@ -18,7 +18,7 @@ def index():
 def upload():
     file = request.files['file']
     if file:
-        file_path = os.path.join(os.path.curdir, "totest.sol")
+        file_path = os.path.join(os.path.curdir, "single_source", "totest.sol")
         file.save(file_path)
 
         return render_template('upload_success.html')
@@ -32,7 +32,8 @@ def analyze():
         return "Word2Vec model not found"
     if not os.path.exists("totest.sol"):
         return "No file uploaded"
-    percent = train.analyze_file(model, w2v, "totest.sol")
+    # TODO: add option to choose 'ree' or 'ts'
+    percent = train.analyze_file(model, w2v, "totest.sol", 'ree')
     return render_template_string("{{ percent }}% likely", percent=percent)
 
 if __name__ == '__main__':

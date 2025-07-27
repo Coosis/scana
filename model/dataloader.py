@@ -31,124 +31,153 @@ from .w2v import w2v_save_path
 # With such a dataset and leveraging PyTorch's DataLoader,
 # we can provide batches of data to the model with ease
 
-supported_kinds = ['ree']
+supported_kinds = ['ree', 'ts']
 good = 'non_vul'
 bad = 'vul'
 
 def get_data(w2v_cp):
     data = []
-    for kind in supported_kinds:
-        kind_path = os.path.join('out', kind)
-        if not os.path.exists(kind_path):
-            print(f"Supported kind {kind} not found, verify out directory structure,"
-                   "and edit supported_kinds in model/dataloader.py")
-            continue
-
-        good_path = os.path.join(kind_path, good)
-        bad_path = os.path.join(kind_path, bad)
-
-        # have vulnerabilities
-        for entry_name in os.listdir(bad_path):
-            single_entry_path = os.path.join(bad_path, entry_name)
-            files = os.listdir(single_entry_path)
-
-            # assert that both files are present
-            if not 'sliced.txt' in files:
-                continue
-            if not 'antlr.txt' in files:
+    with torch.no_grad():
+        for kind in supported_kinds:
+            kind_path = os.path.join('out', kind)
+            if not os.path.exists(kind_path):
+                print(f"Supported kind {kind} not found, verify out directory structure,"
+                       "and edit supported_kinds in model/dataloader.py")
                 continue
 
-            code = ''
-            sliced_path = os.path.join(single_entry_path, 'sliced.txt')
-            with open(sliced_path, 'r') as f:
-                s_code = f.read().replace('\n', ' ')
-                code += s_code
-            code += ' '
-            antlr_path = os.path.join(single_entry_path, 'antlr.txt')
-            with open(antlr_path, 'r') as f:
-                a_code = f.read().replace('\n', ' ')
-                code += a_code
+            good_path = os.path.join(kind_path, good)
+            bad_path = os.path.join(kind_path, bad)
 
-            # w2v_cp_path = os.path.join(w2v_save_path, epoch2cp(w2v_cp))
-            vecs = get_embd(code, w2v_cp)
-            data.append((1, vecs))
+            # have vulnerabilities
+            for entry_name in os.listdir(bad_path):
+                single_entry_path = os.path.join(bad_path, entry_name)
+                files = os.listdir(single_entry_path)
 
-        # no vulnerabilities
-        for entry_name in os.listdir(good_path):
-            single_entry_path = os.path.join(good_path, entry_name)
-            files = os.listdir(single_entry_path)
+                # assert that both files are present
+                if not 'sliced.txt' in files:
+                    continue
+                if not 'antlr.txt' in files:
+                    continue
 
-            # assert that both files are present
-            if not 'sliced.txt' in files:
-                continue
-            if not 'antlr.txt' in files:
-                continue
+                code = ''
+                sliced_path = os.path.join(single_entry_path, 'sliced.txt')
+                with open(sliced_path, 'r') as f:
+                    s_code = f.read().replace('\n', ' ')
+                    code += s_code
+                code += ' '
+                antlr_path = os.path.join(single_entry_path, 'antlr.txt')
+                with open(antlr_path, 'r') as f:
+                    a_code = f.read().replace('\n', ' ')
+                    code += a_code
 
-            code = ''
-            sliced_path = os.path.join(single_entry_path, 'sliced.txt')
-            with open(sliced_path, 'r') as f:
-                s_code = f.read().replace('\n', ' ')
-                code += s_code
-            code += ' '
-            antlr_path = os.path.join(single_entry_path, 'antlr.txt')
-            with open(antlr_path, 'r') as f:
-                a_code = f.read().replace('\n', ' ')
-                code += a_code
+                # w2v_cp_path = os.path.join(w2v_save_path, epoch2cp(w2v_cp))
+                vecs = get_embd(code, w2v_cp)
+                data.append((1, vecs))
 
-            # w2v_cp_path = os.path.join(w2v_save_path, epoch2cp(w2v_cp))
-            vecs = get_embd(code, w2v_cp)
-            data.append((0, vecs))
+            # no vulnerabilities
+            for entry_name in os.listdir(good_path):
+                single_entry_path = os.path.join(good_path, entry_name)
+                files = os.listdir(single_entry_path)
+
+                # assert that both files are present
+                if not 'sliced.txt' in files:
+                    continue
+                if not 'antlr.txt' in files:
+                    continue
+
+                code = ''
+                sliced_path = os.path.join(single_entry_path, 'sliced.txt')
+                with open(sliced_path, 'r') as f:
+                    s_code = f.read().replace('\n', ' ')
+                    code += s_code
+                code += ' '
+                antlr_path = os.path.join(single_entry_path, 'antlr.txt')
+                with open(antlr_path, 'r') as f:
+                    a_code = f.read().replace('\n', ' ')
+                    code += a_code
+
+                # w2v_cp_path = os.path.join(w2v_save_path, epoch2cp(w2v_cp))
+                vecs = get_embd(code, w2v_cp)
+                data.append((0, vecs))
     return data
 
 class CodeDataset(Dataset):
     def __init__(self, w2v_cp, device, mode='train'):
         self.root_path = os.path.join(os.path.curdir, 'out')
 
-        data = get_data(w2v_cp)
+        raw = get_data(w2v_cp)
+        samples = [(
+            torch.tensor(label).to(device),
+            vec.to(device)
+            ) for label, vec in raw]
 
-        # now data is a list of tuples like:
-        # [(label1, tensor1), ...]
-        labels = []
-        sequences = []
-        for label, vec in data:
-            labels.append(label)
-            sequences.append(vec.detach())
-        labels = torch.tensor(labels, dtype=torch.long).to(device)
-        padded_sequences = pad_sequence(sequences, batch_first=True, padding_value=0.0).to(device)
-
-        # TODO: fixed mx ctx length
-        positive_mask = (labels == 1)
-        positive_idxs = torch.where(positive_mask)[0]
-        negative_idxs = torch.where(~positive_mask)[0]
-        if len(positive_idxs) > len(negative_idxs):
-            undersampled_negative_idxs = torch.randperm(
-                len(negative_idxs), 
-                device=device
-            )[:len(positive_idxs)]
-            resampled_idxs = torch.cat([positive_idxs, negative_idxs[undersampled_negative_idxs]])
+        pos = [i for i, (label, _) in enumerate(samples) if label == 1]
+        neg = [i for i, (label, _) in enumerate(samples) if label == 0]
+        if len(pos) < len(neg):
+            perm = torch.randperm(len(neg), device=device)
+            sampled_neg = [neg[k] for k in perm[:len(pos)].tolist()]
+            sampled_pos = pos
         else:
-            undersampled_positive_idxs = torch.randperm(
-                len(positive_idxs),
-                device=device
-            )[:len(negative_idxs)]
-            resampled_idxs = torch.cat([positive_idxs[undersampled_positive_idxs], negative_idxs])
-        x_resampled = padded_sequences[resampled_idxs]
-        y_resampled = labels[resampled_idxs]
+            perm = torch.randperm(len(pos), device=device)
+            sampled_pos = [pos[k] for k in perm[:len(neg)].tolist()]
+            sampled_neg = neg
 
-        dataset = TensorDataset(x_resampled, y_resampled)
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        # Warning: keep the seed so that the split is deterministic
+        idxs = sampled_pos + sampled_neg
+        data = [samples[i] for i in idxs]
+
+        # # now data is a list of tuples like:
+        # # [(label1, tensor1), ...]
+        # labels = []
+        # sequences = []
+        # for label, vec in data:
+        #     labels.append(label)
+        #     sequences.append(vec.detach())
+        # labels = torch.tensor(labels, dtype=torch.long).to(device)
+        # padded_sequences = pad_sequence(sequences, batch_first=True, padding_value=0.0).to(device)
+        #
+        # # TODO: fixed mx ctx length
+        # positive_mask = (labels == 1)
+        # positive_idxs = torch.where(positive_mask)[0]
+        # negative_idxs = torch.where(~positive_mask)[0]
+        # if len(positive_idxs) < len(negative_idxs):
+        #     undersampled_negative_idxs = torch.randperm(
+        #         len(negative_idxs), 
+        #         device=device
+        #     )[:len(positive_idxs)]
+        #     resampled_idxs = torch.cat([positive_idxs, negative_idxs[undersampled_negative_idxs]])
+        # else:
+        #     undersampled_positive_idxs = torch.randperm(
+        #         len(positive_idxs),
+        #         device=device
+        #     )[:len(negative_idxs)]
+        #     resampled_idxs = torch.cat([positive_idxs[undersampled_positive_idxs], negative_idxs])
+        # x_resampled = padded_sequences[resampled_idxs]
+        # y_resampled = labels[resampled_idxs]
+        #
+        # dataset = TensorDataset(x_resampled, y_resampled)
+        # train_size = int(0.8 * len(dataset))
+        # test_size = len(dataset) - train_size
+        # # Warning: keep the seed so that the split is deterministic
         torch.manual_seed(42)
-        self.train_dataset, self.test_dataset = random_split(dataset, [train_size, test_size])
-
-        if mode == 'train':
-            self.data = self.train_dataset
-        else:
-            self.data = self.test_dataset
+        perm = torch.randperm(len(data), device=device)
+        cu = int(0.8*len(data))
+        sel = perm[:cu] if mode == 'train' else perm[cu:]
+        self.samples = [data[i] for i in sel]
+        # self.train_dataset, self.test_dataset = random_split(dataset, [train_size, test_size])
+        # if mode == 'train':
+        #     self.data = self.train_dataset
+        # else:
+        #     self.data = self.test_dataset
 
     def __len__(self):
-        return len(self.data)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        label, vec = self.samples[idx]
+        return label, vec
+        # return self.data[idx]
+
+def coll(batch):
+    labels, vecs = zip(*batch)
+    padded_vecs = pad_sequence(vecs, batch_first=True, padding_value=0.0)
+    return padded_vecs, torch.stack(labels)

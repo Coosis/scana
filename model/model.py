@@ -9,7 +9,8 @@ import datetime
 from . import epoch2cp
 from . import model_save_path
 from . import blstm_default_args as default_args
-from .dataloader import CodeDataset
+from .dataloader import CodeDataset, coll
+from .w2v import model_default_args
 
 class Fusion_Model_BLSTM_ATT(nn.Module):
     def __init__(
@@ -35,15 +36,25 @@ class Fusion_Model_BLSTM_ATT(nn.Module):
 
         if not inference:
             self.dataset = CodeDataset(w2v_cp, device, mode='train')
-            self.loader = DataLoader(self.dataset, batch_size=4, shuffle=True)
+            self.loader = DataLoader(
+                    self.dataset,
+                    batch_size=4,
+                    shuffle=True,
+                    collate_fn=coll
+                    )
 
             self.eval_dataset = CodeDataset(w2v_cp, device, mode='eval')
-            self.eval_loader = DataLoader(self.dataset, batch_size=4, shuffle=True)
+            self.eval_loader = DataLoader(
+                    self.eval_dataset,
+                    batch_size=4,
+                    shuffle=True,
+                    collate_fn=coll
+                    )
 
             # getting dim
             example_batch, _ = next(iter(self.loader))
             dim = example_batch.shape[2]
-        dim = 50
+        dim = model_default_args.get('embed_size', 50)
 
         # model
         self.lstm = nn.LSTM(
@@ -106,7 +117,6 @@ class Fusion_Model_BLSTM_ATT(nn.Module):
                     lr=1e-4):
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
-        torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         print(f"Training started at {datetime.datetime.now()}")
         start_time = time.time()
 
@@ -121,6 +131,7 @@ class Fusion_Model_BLSTM_ATT(nn.Module):
                 logits = self(x_batch)
                 loss = criterion(logits, y_batch)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0)
                 optimizer.step()
                 total_loss += loss.item()
 
